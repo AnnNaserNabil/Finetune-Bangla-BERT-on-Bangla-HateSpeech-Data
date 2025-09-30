@@ -42,7 +42,6 @@ def calculate_metrics(y_true, y_pred):
         metrics[f'f1_th_{thresh}'] = f1_score(y_true, y_pred_binary, zero_division=0)
 
     # Default metrics at threshold 0.5
-    y_pred_binary = (y_pred > 0.5).astype(int).flatten()
     metrics.update({
         'accuracy': metrics['accuracy_th_0.5'],
         'precision': metrics['precision_th_0.5'],
@@ -95,8 +94,8 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=N
 
         total_loss += loss.item()
         predictions = torch.sigmoid(outputs['logits'])
-        all_train_predictions.extend(predictions.cpu().numpy())
-        all_train_labels.extend(labels.cpu().numpy())
+        all_train_predictions.extend(predictions.detach().cpu().numpy())  # Added .detach()
+        all_train_labels.extend(labels.detach().cpu().numpy())  # Added .detach()
 
     avg_loss = total_loss / len(dataloader)
     train_metrics = calculate_metrics(np.array(all_train_labels), np.array(all_train_predictions))
@@ -139,8 +138,8 @@ def evaluate_model(model, dataloader, device, class_weights=None):
             total_loss += loss.item()
 
             predictions = torch.sigmoid(outputs['logits'])
-            all_predictions.extend(predictions.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
+            all_predictions.extend(predictions.detach().cpu().numpy())  # Added .detach()
+            all_labels.extend(labels.detach().cpu().numpy())  # Added .detach()
 
     avg_loss = total_loss / len(dataloader)
     metrics = calculate_metrics(np.array(all_labels), np.array(all_predictions))
