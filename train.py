@@ -14,7 +14,7 @@ from tqdm import tqdm
 import mlflow
 import os
 
-from data import HateSpeechDataset, calculate_class_weights
+from data import HateSpeechDataset, calculate_class_weights, prepare_kfold_splits
 from model import TransformerBinaryClassifier
 from utils import get_model_metrics, print_fold_summary, print_experiment_summary
 
