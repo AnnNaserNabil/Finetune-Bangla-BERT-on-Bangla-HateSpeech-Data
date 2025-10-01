@@ -1,0 +1,71 @@
+EXPERIMENT_CONFIGS = [
+    # Original Batch 16
+    {'batch_size': 16, 'learning_rate': 1e-5, 'num_epochs': 10, 'freeze_base': False},
+    {'batch_size': 16, 'learning_rate': 2e-5, 'num_epochs': 20, 'freeze_base': False},
+    {'batch_size': 16, 'learning_rate': 3e-5, 'num_epochs': 30, 'freeze_base': False},
+
+    # Original Batch 32
+    {'batch_size': 32, 'learning_rate': 1e-5, 'num_epochs': 10, 'freeze_base': False},
+    {'batch_size': 32, 'learning_rate': 2e-5, 'num_epochs': 20, 'freeze_base': False},
+    {'batch_size': 32, 'learning_rate': 3e-5, 'num_epochs': 30, 'freeze_base': False},
+
+    # Original Batch 64
+    {'batch_size': 64, 'learning_rate': 1e-5, 'num_epochs': 10, 'freeze_base': False},
+    {'batch_size': 64, 'learning_rate': 2e-5, 'num_epochs': 20, 'freeze_base': False},
+    {'batch_size': 64, 'learning_rate': 3e-5, 'num_epochs': 30, 'freeze_base': False},
+
+    # Additions for Higher Performance
+    # Lower LR for stability
+    {'batch_size': 32, 'learning_rate': 1e-5, 'num_epochs': 20, 'freeze_base': False},
+    {'batch_size': 32, 'learning_rate': 1e-5, 'num_epochs': 30, 'freeze_base': False},
+
+    # Slightly higher LR for faster convergence
+    {'batch_size': 32, 'learning_rate': 5e-5, 'num_epochs': 10, 'freeze_base': False},
+
+    # With Freezing for Better Generalization
+    {'batch_size': 32, 'learning_rate': 2e-5, 'num_epochs': 20, 'freeze_base': True},
+    {'batch_size': 32, 'learning_rate': 1e-5, 'num_epochs': 30, 'freeze_base': True},
+]
+
+
+
+EXPERIMENT_CONFIGS = [
+    # === BASELINE EXPERIMENTS ===
+    # Standard setup with common BERT fine-tuning parameters
+    {'batch_size': 32, 'learning_rate': 2e-5, 'num_epochs': 15, 'freeze_base': False, 'max_length': 128},
+    
+    # === LOWER LEARNING RATE EXPERIMENTS ===
+    # Often performs best for multi-label classification tasks
+    {'batch_size': 32, 'learning_rate': 1e-5, 'num_epochs': 20, 'freeze_base': False, 'max_length': 128},
+    {'batch_size': 32, 'learning_rate': 1.5e-5, 'num_epochs': 20, 'freeze_base': False, 'max_length': 128},
+    
+    # === SLIGHTLY HIGHER LEARNING RATE ===
+    # For faster convergence if data is clean
+    {'batch_size': 32, 'learning_rate': 3e-5, 'num_epochs': 15, 'freeze_base': False, 'max_length': 128},
+    {'batch_size': 32, 'learning_rate': 4e-5, 'num_epochs': 12, 'freeze_base': False, 'max_length': 128},
+    
+    # === LARGER BATCH SIZE EXPERIMENTS ===
+    # Better gradient estimates, faster training
+    {'batch_size': 64, 'learning_rate': 3e-5, 'num_epochs': 15, 'freeze_base': False, 'max_length': 128},
+    {'batch_size': 64, 'learning_rate': 4e-5, 'num_epochs': 12, 'freeze_base': False, 'max_length': 128},
+    
+    # === FEATURE EXTRACTION MODE ===
+    # Frozen base layers - prevents overfitting with limited data
+    {'batch_size': 32, 'learning_rate': 1e-4, 'num_epochs': 25, 'freeze_base': True, 'max_length': 128},
+    {'batch_size': 64, 'learning_rate': 1e-4, 'num_epochs': 20, 'freeze_base': True, 'max_length': 128},
+    
+    # === VERY LOW LEARNING RATE ===
+    # For stable, slow training - good for final production model
+    {'batch_size': 32, 'learning_rate': 5e-6, 'num_epochs': 30, 'freeze_base': False, 'max_length': 128},
+    
+    # === DIFFERENT SEQUENCE LENGTHS ===
+    # Shorter sequences for efficiency
+    {'batch_size': 32, 'learning_rate': 2e-5, 'num_epochs': 15, 'freeze_base': False, 'max_length': 64},
+    # Longer sequences for better context
+    {'batch_size': 32, 'learning_rate': 2e-5, 'num_epochs': 15, 'freeze_base': False, 'max_length': 256},
+    
+    # === XLM-ROBERTA EXPERIMENTS ===
+    # Alternative multilingual model (if Bangla BERT doesn't perform well)
+    {'batch_size': 32, 'learning_rate': 2e-5, 'num_epochs': 15, 'freeze_base': False, 'max_length': 128, 'model_path': 'xlm-roberta-base'},
+    {'batch_size': 32, 'learning_rate': 1e-5, 'num_epochs': 20, 'freeze_base': False, 'max_length': 128, 'model_path': 'xlm-roberta-base'},
+]
