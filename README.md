@@ -29,7 +29,20 @@ Run fine-tuning via `main.py` with command-line arguments. All experiments log t
    ```
    !pip install -q torch transformers scikit-learn pandas numpy tqdm mlflow
    ```
-6. Run command (replace with your values):
+
+
+   ### Running in [Kaggle](https://www.kaggle.com/)
+   1. Open a new notebook
+   2. Go to Settings -> Accelerator -> Choose GPU P100
+   3. 3. Clone repo: `!git clone https://github.com/AnnNaserNabil/Finetune-Bangla-BERT-on-Bangla-HateSpeech-Data`
+   4. `%cd Finetune-Bangla-BERT-on-Bangla-HateSpeech-Data`
+   5. Install dependencies:
+   ```
+   !pip install -q torch transformers scikit-learn pandas numpy tqdm mlflow
+   ```
+   (Get the dataset path from sidebar)
+   
+7. Run command (replace with your values):
    ```
    !python main.py \
     --author_name "your_name" \
@@ -47,6 +60,7 @@ Run fine-tuning via `main.py` with command-line arguments. All experiments log t
     --early_stopping_patience 5 \
     --num_folds 5
    ```
+   
    - Full arguments:
      - `--batch`: Batch size (e.g., 16, 32, 64).
      - `--lr`: Learning rate (e.g., 1e-5, 2e-5, 3e-5).
@@ -66,11 +80,13 @@ Run fine-tuning via `main.py` with command-line arguments. All experiments log t
      - `--freeze_base`: Freeze BERT base layers.
      - `--mlflow_experiment_name`: Experiment name (default: `Bangla-HateSpeech-Detection`).
 
-7. After run: Zip and download MLflow logs:
+
+8. After run: Zip and download MLflow logs:
    ```
    !zip -r mlruns_yourname_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip ./mlruns
    ```
    - Download `{mlruns_yourname}_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip` from Colab's files sidebar.
+
 
 ### Viewing Results Locally
 1. Unzip `mlruns_yourname_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip` to a local directory (e.g., `experiments/mlruns_yourname_batch_32_lr_2e-5_epochs_15_dropout_0.1`).
@@ -78,7 +94,9 @@ Run fine-tuning via `main.py` with command-line arguments. All experiments log t
    ```
    mlflow ui
    ```
+
 3. Open `http://localhost:5000` in your browser to view experiments, metrics (accuracy, precision, recall, F1, ROC-AUC), parameters, and saved models.
+
 
 ### Running Locally (No Colab)
 Same as above, but use `python main.py ...` instead of `!python`.
