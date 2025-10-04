@@ -106,9 +106,25 @@ Same as above, but use `python main.py ...` instead of `!python`.
 To collaborate with minimal effort:
 1. Fork the repo and clone to Colab or your local machine.
 2. Run with your name and dataset:
+   
+```
+   !python main.py \
+    --author_name "your_name" \
+    --dataset_path "path/to/your/HateSpeech.csv" \
+    --batch 32 \
+    --lr 2e-5 \
+    --epochs 15 \
+    --model_path "sagorsarker/bangla-bert-base" \
+    --stratification_type binary \
+    --seed 42 \
+    --dropout 0.1 \
+    --weight_decay 0.01 \
+    --warmup_ratio 0.1 \
+    --gradient_clip_norm 1.0 \
+    --early_stopping_patience 5 \
+    --num_folds 5
    ```
-   python main.py --batch 32 --lr 2e-5 --epochs 15 --author_name 'collaborator' --dataset_path 'your/path/HateSpeech.csv'
-   ```
+
 3. Zip/download `mlruns.zip` and view results locally as described above.
 4. Add new experiments? Create a new configuration in your script or modify hyperparameters, commit, and submit a pull request (PR).
 5. Issues/PRs: Welcome! Describe your changes (e.g., "Adjusted learning rate to 1e-5 for better F1-score").
