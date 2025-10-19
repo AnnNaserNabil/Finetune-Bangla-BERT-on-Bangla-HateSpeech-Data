@@ -125,6 +125,13 @@ To collaborate with minimal effort:
     --num_folds 5
    ```
 
+* After run: Zip and download MLflow logs:
+   ```
+   !zip -r mlruns_yourname_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip ./mlruns
+   ```
+   - Download `{mlruns_yourname}_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip` from Colab's files sidebar.
+
+
 3. Zip/download `mlruns.zip` and view results locally as described above.
 4. Add new experiments? Create a new configuration in your script or modify hyperparameters, commit, and submit a pull request (PR).
 5. Issues/PRs: Welcome! Describe your changes (e.g., "Adjusted learning rate to 1e-5 for better F1-score").
