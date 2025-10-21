@@ -264,7 +264,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             train_comments, val_comments = comments[train_idx], comments[val_idx]
             train_labels, val_labels = labels[train_idx], labels[val_idx]
 
-            class_weights = calculate_class_weights(train_labels)
+            class_weights = None
 
             train_dataset = HateSpeechDataset(train_comments, train_labels, tokenizer, config.max_length)
             val_dataset = HateSpeechDataset(val_comments, val_labels, tokenizer, config.max_length)
@@ -300,8 +300,8 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             patience_counter = 0
 
             for epoch in range(config.epochs):
-                train_metrics = train_epoch(model, train_loader, optimizer, scheduler, device, max_norm=config.gradient_clip_norm)
-                val_metrics = evaluate_model(model, val_loader, device)
+                train_metrics = train_epoch(model, train_loader, optimizer, scheduler, device, class_weights, max_norm=config.gradient_clip_norm)
+                val_metrics = evaluate_model(model, val_loader, device, class_weights)
 
                 # Use macro F1 for early stopping and model saving
                 if val_metrics['macro_f1'] > best_macro_f1:
