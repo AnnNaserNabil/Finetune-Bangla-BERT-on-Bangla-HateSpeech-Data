@@ -147,8 +147,7 @@ def evaluate_model(model, dataloader, device, class_weights=None):
 
     return metrics
 
-
-def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_metrics, best_f1, best_epoch):
+def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_metrics, best_accuracy, best_epoch):
     """
     Print comprehensive epoch metrics.
 
@@ -188,9 +187,8 @@ def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_m
     for thresh in [0.4, 0.5, 0.6]:
         print(f"    Threshold {thresh}: F1={val_metrics[f'f1_th_{thresh}']:.4f}")
 
-    print(f"\n⭐ Best F1 so far: {best_f1:.4f} (Epoch {best_epoch})")
+    print(f"\n⭐ Best Accuracy so far: {best_accuracy:.4f} (Epoch {best_epoch})")  # Changed from Best F1 to Best Accuracy
     print("="*60)
-
 
 def run_kfold_training(config, comments, labels, tokenizer, device):
     """
@@ -329,9 +327,9 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             mlflow.pytorch.log_model(
                 final_model,
                 name="model",
-                registered_model_name=f"bangla_hatespeech_model_fold{best_fold_idx+1}_f1_{best_overall_f1:.4f}"
+                registered_model_name=f"bangla_hatespeech_model_fold{best_fold_idx+1}_accuracy_{best_overall_accuracy:.4f}"
             )
-            model_filename = f"best_model_fold_{best_fold_idx+1}_f1_{best_overall_f1:.4f}.pt"
+            model_filename = f"best_model_fold_{best_fold_idx+1}_accuracy_{best_overall_accuracy:.4f}.pt"
             torch.save(best_fold_model, model_filename)
             print(f"\nModel saved: {model_filename}")
 
