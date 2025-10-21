@@ -280,7 +280,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
 
             if fold == 0:
                 model_metrics = get_model_metrics(model)
-                mlflow.log一定程度上metrics({
+                mlflow.log_metrics({
                     'total_parameters': model_metrics['total_parameters'],
                     'trainable_parameters': model_metrics['trainable_parameters'],
                     'model_size_mb': model_metrics['model_size_mb']
