@@ -7,7 +7,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc
 import numpy as np
 from tqdm import tqdm
 import mlflow
-import os
+import pandas as pd
 from data import HateSpeechDataset, calculate_class_weights, prepare_kfold_splits
 from model import TransformerBinaryClassifier
 from utils import get_model_metrics, print_fold_summary, print_experiment_summary
@@ -21,39 +21,35 @@ def calculate_metrics(y_true, y_pred):
     Returns:
         dict: Dictionary containing accuracy, F1 (positive and negative), macro F1, ROC-AUC, and best threshold
     """
-    thresholds = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]  # Explore multiple thresholds
+    thresholds = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]
     metrics = {}
     y_true = y_true.flatten()
     y_pred = y_pred.flatten()
 
-    # Initialize variables to track the best threshold based on macro F1
     best_macro_f1 = -1
     best_threshold = None
     best_threshold_metrics = {}
 
-    # Calculate macro F1 for each threshold
     for thresh in thresholds:
         y_pred_binary = (y_pred > thresh).astype(int)
         precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred_binary, zero_division=0)
         macro_f1 = (f1[0] + f1[1]) / 2 if len(f1) == 2 else f1[0]
         metrics[f'macro_f1_th_{thresh}'] = macro_f1
 
-        # Track the best threshold based on macro F1
         if macro_f1 > best_macro_f1:
             best_macro_f1 = macro_f1
             best_threshold = thresh
             best_threshold_metrics = {
                 'accuracy': accuracy_score(y_true, y_pred_binary),
-                'precision': precision[1],  # Positive class (hate speech)
+                'precision': precision[1],
                 'recall': recall[1],
                 'f1': f1[1],
                 'macro_f1': macro_f1,
-                'precision_negative': precision[0],  # Negative class (non-hate speech)
+                'precision_negative': precision[0],
                 'recall_negative': recall[0],
                 'f1_negative': f1[0]
             }
 
-    # Update metrics with best threshold values and ROC-AUC
     metrics.update({
         'accuracy': best_threshold_metrics['accuracy'],
         'precision': best_threshold_metrics['precision'],
@@ -242,6 +238,18 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             train_comments, val_comments = comments[train_idx], comments[val_idx]
             train_labels, val_labels = labels[train_idx], labels[val_idx]
 
+            # Log class distribution
+            train_hate_count = np.sum(train_labels)
+            train_non_hate_count = len(train_labels) - train_hate_count
+            val_hate_count = np.sum(val_labels)
+            val_non_hate_count = len(val_labels) - val_hate_count
+            mlflow.log_metrics({
+                f'fold_{fold+1}_train_hate_samples': train_hate_count,
+                f'fold_{fold+1}_train_non_hate_samples': train_non_hate_count,
+                f'fold_{fold+1}_val_hate_samples': val_hate_count,
+                f'fold_{fold+1}_val_non_hate_samples': val_non_hate_count
+            })
+
             # No class weights needed for nearly balanced dataset
             class_weights = None
 
@@ -282,13 +290,16 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 train_metrics = train_epoch(model, train_loader, optimizer, scheduler, device, class_weights, max_norm=config.gradient_clip_norm)
                 val_metrics = evaluate_model(model, val_loader, device, class_weights)
 
-                # Use macro F1 for early stopping and model saving
                 if val_metrics['macro_f1'] > best_macro_f1:
                     best_macro_f1 = val_metrics['macro_f1']
                     best_metrics = val_metrics.copy()
                     best_metrics.update({f'train_{k}': v for k, v in train_metrics.items()})
                     best_epoch = epoch + 1
                     patience_counter = 0
+
+                    # Log threshold exploration for best epoch
+                    for thresh in [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]:
+                        mlflow.log_metric(f'fold_{fold+1}_best_epoch_val_macro_f1_th_{thresh}', val_metrics[f'macro_f1_th_{thresh}'])
 
                     if best_macro_f1 > best_overall_macro_f1:
                         best_overall_macro_f1 = best_macro_f1
@@ -300,14 +311,8 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 print_epoch_metrics(epoch, config.epochs, fold, config.num_folds,
                                    train_metrics, val_metrics, best_macro_f1, best_epoch)
 
-                # Log key metrics to MLflow
+                # Log only validation metrics per epoch
                 mlflow.log_metrics({
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_loss': train_metrics['loss'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_accuracy': train_metrics['accuracy'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_f1': train_metrics['f1'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_f1_negative': train_metrics['f1_negative'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_macro_f1': train_metrics['macro_f1'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_roc_auc': train_metrics['roc_auc'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_loss': val_metrics['loss'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_accuracy': val_metrics['accuracy'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_f1': val_metrics['f1'],
@@ -330,6 +335,40 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
 
             print_fold_summary(fold, best_metrics, best_epoch)
 
+        # Aggregate metrics across folds
+        aggregate_metrics = {
+            'mean_val_accuracy': np.mean([fr['accuracy'] for fr in fold_results]),
+            'std_val_accuracy': np.std([fr['accuracy'] for fr in fold_results]),
+            'mean_val_f1': np.mean([fr['f1'] for fr in fold_results]),
+            'std_val_f1': np.std([fr['f1'] for fr in fold_results]),
+            'mean_val_f1_negative': np.mean([fr['f1_negative'] for fr in fold_results]),
+            'std_val_f1_negative': np.std([fr['f1_negative'] for fr in fold_results]),
+            'mean_val_macro_f1': np.mean([fr['macro_f1'] for fr in fold_results]),
+            'std_val_macro_f1': np.std([fr['macro_f1'] for fr in fold_results]),
+            'mean_val_roc_auc': np.mean([fr['roc_auc'] for fr in fold_results]),
+            'std_val_roc_auc': np.std([fr['roc_auc'] for fr in fold_results]),
+            'mean_val_loss': np.mean([fr['loss'] for fr in fold_results]),
+            'std_val_loss': np.std([fr['loss'] for fr in fold_results])
+        }
+        mlflow.log_metrics(aggregate_metrics)
+
+        # Create and log summary table
+        summary_data = {
+            'Fold': [f'Fold {i+1}' for i in range(config.num_folds)],
+            'Val Accuracy': [fr['accuracy'] for fr in fold_results],
+            'Val F1 (Hate)': [fr['f1'] for fr in fold_results],
+            'Val F1 (Non-Hate)': [fr['f1_negative'] for fr in fold_results],
+            'Val Macro F1': [fr['macro_f1'] for fr in fold_results],
+            'Val ROC-AUC': [fr['roc_auc'] for fr in fold_results],
+            'Val Loss': [fr['loss'] for fr in fold_results],
+            'Best Threshold': [fr['best_threshold'] for fr in fold_results]
+        }
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.loc['Mean'] = summary_df.mean(numeric_only=True)
+        summary_df.loc['Std'] = summary_df.std(numeric_only=True)
+        summary_df.to_csv('fold_summary.csv')
+        mlflow.log_artifact('fold_summary.csv')
+
         best_fold_metrics = fold_results[best_fold_idx]
         mlflow.log_metric('best_fold_index', best_fold_idx + 1)
 
@@ -345,8 +384,9 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             final_model.load_state_dict(best_fold_model)
             mlflow.pytorch.log_model(
                 final_model,
-                name="model",
+                artifact_path="model",
                 registered_model_name=f"bangla_hatespeech_model_fold{best_fold_idx+1}_macro_f1_{best_overall_macro_f1:.4f}"
             )
+            print(f"\nModel logged to MLflow for fold {best_fold_idx+1} with macro F1 {best_overall_macro_f1:.4f}")
 
         print_experiment_summary(best_fold_idx, best_fold_metrics, model_metrics)
