@@ -234,7 +234,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         fold_results = []
         best_fold_model = None
         best_fold_idx = -1
-        best_overall_f1 = 0
+        best_overall_accuracy = 0
 
         for fold, (train_idx, val_idx) in enumerate(kfold_splits):
             print(f"\n{'='*60}")
@@ -273,7 +273,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 num_training_steps=total_steps
             )
 
-            best_f1 = 0
+            best_accuracy = 0
             best_metrics = {}
             best_epoch = 0
             patience = config.early_stopping_patience
@@ -283,22 +283,22 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 train_metrics = train_epoch(model, train_loader, optimizer, scheduler, device, class_weights, max_norm=config.gradient_clip_norm)
                 val_metrics = evaluate_model(model, val_loader, device, class_weights)
 
-                if val_metrics['f1'] > best_f1:
-                    best_f1 = val_metrics['f1']
+                if val_metrics['accuracy'] > best_accuracy:
+                    best_accuracy = val_metrics['accuracy']
                     best_metrics = val_metrics.copy()
                     best_metrics.update({f'train_{k}': v for k, v in train_metrics.items()})
                     best_epoch = epoch + 1
                     patience_counter = 0
 
-                    if best_f1 > best_overall_f1:
-                        best_overall_f1 = best_f1
+                    if best_accuracy > best_overall_accuracy:
+                        best_overall_accuracy = best_accuracy
                         best_fold_idx = fold
                         best_fold_model = model.state_dict()
                 else:
                     patience_counter += 1
 
                 print_epoch_metrics(epoch, config.epochs, fold, config.num_folds,
-                                   train_metrics, val_metrics, best_f1, best_epoch)
+                                   train_metrics, val_metrics, best_accuracy, best_epoch)
 
                 if patience_counter >= patience:
                     print(f"\nEarly stopping triggered at epoch {epoch+1}")
