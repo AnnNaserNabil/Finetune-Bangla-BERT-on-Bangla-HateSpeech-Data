@@ -348,8 +348,5 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 name="model",
                 registered_model_name=f"bangla_hatespeech_model_fold{best_fold_idx+1}_macro_f1_{best_overall_macro_f1:.4f}"
             )
-            model_filename = f"best_model_fold_{best_fold_idx+1}_macro_f1_{best_overall_macro_f1:.4f}.pt"
-            torch.save(best_fold_model, model_filename)
-            print(f"\nModel saved: {model_filename}")
 
         print_experiment_summary(best_fold_idx, best_fold_metrics, model_metrics)
