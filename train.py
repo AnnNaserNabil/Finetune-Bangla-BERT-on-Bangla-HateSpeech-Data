@@ -41,11 +41,11 @@ def calculate_metrics(y_true, y_pred):
             best_threshold = thresh
             best_threshold_metrics = {
                 'accuracy': accuracy_score(y_true, y_pred_binary),
-                'precision': precision[1],
+                'precision': precision[1],  # Positive class (hate speech)
                 'recall': recall[1],
                 'f1': f1[1],
                 'macro_f1': macro_f1,
-                'precision_negative': precision[0],
+                'precision_negative': precision[0],  # Negative class (non-hate speech)
                 'recall_negative': recall[0],
                 'f1_negative': f1[0]
             }
@@ -329,6 +329,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             best_metrics['best_epoch'] = best_epoch
             fold_results.append(best_metrics)
 
+            # Log all best metrics for the fold, including precision and recall for both classes
             for metric_name, metric_value in best_metrics.items():
                 if not metric_name.startswith('train_'):
                     mlflow.log_metric(f"fold_{fold+1}_best_{metric_name}", metric_value)
@@ -339,8 +340,16 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         aggregate_metrics = {
             'mean_val_accuracy': np.mean([fr['accuracy'] for fr in fold_results]),
             'std_val_accuracy': np.std([fr['accuracy'] for fr in fold_results]),
+            'mean_val_precision': np.mean([fr['precision'] for fr in fold_results]),
+            'std_val_precision': np.std([fr['precision'] for fr in fold_results]),
+            'mean_val_recall': np.mean([fr['recall'] for fr in fold_results]),
+            'std_val_recall': np.std([fr['recall'] for fr in fold_results]),
             'mean_val_f1': np.mean([fr['f1'] for fr in fold_results]),
             'std_val_f1': np.std([fr['f1'] for fr in fold_results]),
+            'mean_val_precision_negative': np.mean([fr['precision_negative'] for fr in fold_results]),
+            'std_val_precision_negative': np.std([fr['precision_negative'] for fr in fold_results]),
+            'mean_val_recall_negative': np.mean([fr['recall_negative'] for fr in fold_results]),
+            'std_val_recall_negative': np.std([fr['recall_negative'] for fr in fold_results]),
             'mean_val_f1_negative': np.mean([fr['f1_negative'] for fr in fold_results]),
             'std_val_f1_negative': np.std([fr['f1_negative'] for fr in fold_results]),
             'mean_val_macro_f1': np.mean([fr['macro_f1'] for fr in fold_results]),
@@ -356,7 +365,11 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         summary_data = {
             'Fold': [f'Fold {i+1}' for i in range(config.num_folds)],
             'Val Accuracy': [fr['accuracy'] for fr in fold_results],
+            'Val Precision (Hate)': [fr['precision'] for fr in fold_results],
+            'Val Recall (Hate)': [fr['recall'] for fr in fold_results],
             'Val F1 (Hate)': [fr['f1'] for fr in fold_results],
+            'Val Precision (Non-Hate)': [fr['precision_negative'] for fr in fold_results],
+            'Val Recall (Non-Hate)': [fr['recall_negative'] for fr in fold_results],
             'Val F1 (Non-Hate)': [fr['f1_negative'] for fr in fold_results],
             'Val Macro F1': [fr['macro_f1'] for fr in fold_results],
             'Val ROC-AUC': [fr['roc_auc'] for fr in fold_results],
@@ -372,7 +385,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         best_fold_metrics = fold_results[best_fold_idx]
         mlflow.log_metric('best_fold_index', best_fold_idx + 1)
 
-        for metric_name in ['accuracy', 'f1', 'f1_negative', 'macro_f1', 'roc_auc']:
+        for metric_name in ['accuracy', 'precision', 'recall', 'f1', 'f1_negative', 'precision_negative', 'recall_negative', 'macro_f1', 'roc_auc']:
             best_value = max([fold_result[metric_name] for fold_result in fold_results])
             mlflow.log_metric(f'best_{metric_name}', best_value)
 
