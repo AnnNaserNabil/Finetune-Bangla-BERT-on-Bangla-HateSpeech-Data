@@ -14,7 +14,7 @@ from utils import get_model_metrics, print_fold_summary, print_experiment_summar
 
 def calculate_metrics(y_true, y_pred):
     """
-    Calculate metrics for binary classification with threshold exploration, including macro F1 for imbalanced datasets.
+    Calculate metrics for binary classification with threshold exploration, optimizing for macro F1 on imbalanced datasets.
     Args:
         y_true: Ground truth labels (0 or 1)
         y_pred: Predicted probabilities
@@ -26,8 +26,8 @@ def calculate_metrics(y_true, y_pred):
     y_true = y_true.flatten()
     y_pred = y_pred.flatten()
 
-    # Initialize variables to track the best threshold
-    best_f1 = -1
+    # Initialize variables to track the best threshold based on macro F1
+    best_macro_f1 = -1
     best_threshold = None
     best_threshold_metrics = {}
 
@@ -39,37 +39,38 @@ def calculate_metrics(y_true, y_pred):
         metrics[f'recall_th_{thresh}'] = recall_score(y_true, y_pred_binary, zero_division=0)
         metrics[f'f1_th_{thresh}'] = f1_score(y_true, y_pred_binary, zero_division=0)
 
-        # Track the best threshold based on F1 score
-        if metrics[f'f1_th_{thresh}'] > best_f1:
-            best_f1 = metrics[f'f1_th_{thresh}']
+        # Calculate macro F1 for this threshold
+        precision, recall, f1, support = precision_recall_fscore_support(y_true, y_pred_binary, zero_division=0)
+        macro_f1 = (f1[0] + f1[1]) / 2 if len(f1) == 2 else metrics[f'f1_th_{thresh}']
+        metrics[f'macro_f1_th_{thresh}'] = macro_f1
+
+        # Track the best threshold based on macro F1
+        if macro_f1 > best_macro_f1:
+            best_macro_f1 = macro_f1
             best_threshold = thresh
             best_threshold_metrics = {
                 'accuracy': metrics[f'accuracy_th_{thresh}'],
                 'precision': metrics[f'precision_th_{thresh}'],
                 'recall': metrics[f'recall_th_{thresh}'],
-                'f1': metrics[f'f1_th_{thresh}']
+                'f1': metrics[f'f1_th_{thresh}'],
+                'macro_f1': macro_f1,
+                'precision_negative': precision[0],
+                'recall_negative': recall[0],
+                'f1_negative': f1[0]
             }
 
-    # Calculate macro F1 score explicitly
-    y_pred_binary_best = (y_pred > best_threshold).astype(int)
-    precision, recall, f1, support = precision_recall_fscore_support(y_true, y_pred_binary_best, zero_division=0)
-    
-    # For binary classification, precision[0], recall[0], f1[0] are for negative class (0)
-    # and precision[1], recall[1], f1[1] are for positive class (1)
-    macro_f1 = (f1[0] + f1[1]) / 2 if len(f1) == 2 else best_threshold_metrics['f1']
-
-    # Update default metrics with the best threshold's values
+    # Update default metrics with the best threshold's values (based on macro F1)
     metrics.update({
         'accuracy': best_threshold_metrics['accuracy'],
-        'precision': best_threshold_metrics['precision'],  # Positive class precision
-        'recall': best_threshold_metrics['recall'],  # Positive class recall
-        'f1': best_threshold_metrics['f1'],  # Positive class F1
-        'macro_f1': macro_f1,  # Macro-averaged F1 score
+        'precision': best_threshold_metrics['precision'],
+        'recall': best_threshold_metrics['recall'],
+        'f1': best_threshold_metrics['f1'],
+        'macro_f1': best_threshold_metrics['macro_f1'],
         'roc_auc': roc_auc_score(y_true, y_pred) if y_pred is not None else 0.0,
         'best_threshold': best_threshold,
-        'precision_negative': precision[0],  # Negative class precision
-        'recall_negative': recall[0],  # Negative class recall
-        'f1_negative': f1[0]  # Negative class F1
+        'precision_negative': best_threshold_metrics['precision_negative'],
+        'recall_negative': best_threshold_metrics['recall_negative'],
+        'f1_negative': best_threshold_metrics['f1_negative']
     })
 
     return metrics
@@ -193,7 +194,7 @@ def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_m
     print(f"  ROC-AUC: {train_metrics['roc_auc']:.4f}")
     print("  Threshold Exploration:")
     for thresh in [0.4, 0.5, 0.6]:
-        print(f"    Threshold {thresh}: F1={train_metrics[f'f1_th_{thresh}']:.4f}")
+        print(f"    Threshold {thresh}: Macro F1={train_metrics[f'macro_f1_th_{thresh}']:.4f}, F1 (Positive)={train_metrics[f'f1_th_{thresh}']:.4f}")
 
     print("\nVALIDATION:")
     print(f"  Loss: {val_metrics['loss']:.4f}")
@@ -208,7 +209,7 @@ def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_m
     print(f"  ROC-AUC: {val_metrics['roc_auc']:.4f}")
     print("  Threshold Exploration:")
     for thresh in [0.4, 0.5, 0.6]:
-        print(f"    Threshold {thresh}: F1={val_metrics[f'f1_th_{thresh}']:.4f}")
+        print(f"    Threshold {thresh}: Macro F1={val_metrics[f'macro_f1_th_{thresh}']:.4f}, F1 (Positive)={val_metrics[f'f1_th_{thresh}']:.4f}")
 
     print(f"\nBest Macro F1 so far: {best_macro_f1:.4f} (Epoch {best_epoch})")
     print("="*60)
@@ -279,7 +280,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
 
             if fold == 0:
                 model_metrics = get_model_metrics(model)
-                mlflow.log_metrics({
+                mlflow.log一定程度上metrics({
                     'total_parameters': model_metrics['total_parameters'],
                     'trainable_parameters': model_metrics['trainable_parameters'],
                     'model_size_mb': model_metrics['model_size_mb']
@@ -357,7 +358,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 if not metric_name.startswith('train_'):
                     mlflow.log_metric(f"fold_{fold+1}_best_{metric_name}", metric_value)
 
-            print_fold_summary(fold, best_metrics, best_epoch)
+            print_fold_summary(fold, greatest_metrics, best_epoch)
 
         best_fold_metrics = fold_results[best_fold_idx]
         mlflow.log_metric('best_fold_index', best_fold_idx + 1)
