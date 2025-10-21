@@ -300,8 +300,8 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             patience_counter = 0
 
             for epoch in range(config.epochs):
-                train_metrics = train_epoch(model, train_loader, optimizer, scheduler, device, class_weights, max_norm=config.gradient_clip_norm)
-                val_metrics = evaluate_model(model, val_loader, device, class_weights)
+                train_metrics = train_epoch(model, train_loader, optimizer, scheduler, device, max_norm=config.gradient_clip_norm)
+                val_metrics = evaluate_model(model, val_loader, device)
 
                 # Use macro F1 for early stopping and model saving
                 if val_metrics['macro_f1'] > best_macro_f1:
