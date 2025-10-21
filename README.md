@@ -83,9 +83,9 @@ Run fine-tuning via `main.py` with command-line arguments. All experiments log t
 
 8. After run: Zip and download MLflow logs:
    ```
-   !zip -r mlruns_yourname_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip ./mlruns
+   !zip -r mlruns_yourname_ModelName_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip ./mlruns
    ```
-   - Download `{mlruns_yourname}_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip` from Colab's files sidebar.
+   - Download `{mlruns_yourname}_ModelName_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip` from Colab's files sidebar.
 
 
 ### Viewing Results Locally
@@ -127,9 +127,9 @@ To collaborate with minimal effort:
 
 * After run: Zip and download MLflow logs:
    ```
-   !zip -r mlruns_yourname_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip ./mlruns
+   !zip -r mlruns_yourname_ModelName_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip ./mlruns
    ```
-   - Download `{mlruns_yourname}_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip` from Colab's files sidebar.
+   - Download `{mlruns_yourname}_ModelName_batch_32_lr_2e-5_epochs_15_dropout_0.1.zip` from Colab's files sidebar.
 
 
 3. Zip/download `mlruns.zip` and view results locally as described above.
