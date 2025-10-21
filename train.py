@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from transformers import get_linear_schedule_with_warmup
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
 import numpy as np
 from tqdm import tqdm
 import mlflow
@@ -14,13 +14,12 @@ from utils import get_model_metrics, print_fold_summary, print_experiment_summar
 
 def calculate_metrics(y_true, y_pred):
     """
-    Calculate metrics for binary classification with threshold exploration, optimizing for macro F1 on imbalanced datasets.
-    Includes macro recall and macro precision.
+    Calculate metrics for binary classification with threshold exploration, optimizing for macro F1.
     Args:
         y_true: Ground truth labels (0 or 1)
         y_pred: Predicted probabilities
     Returns:
-        dict: Dictionary containing accuracy, precision, recall, F1, macro F1, macro recall, macro precision, ROC-AUC, and best threshold metrics
+        dict: Dictionary containing accuracy, F1 (positive and negative), macro F1, ROC-AUC, and best threshold
     """
     thresholds = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]  # Explore multiple thresholds
     metrics = {}
@@ -32,55 +31,40 @@ def calculate_metrics(y_true, y_pred):
     best_threshold = None
     best_threshold_metrics = {}
 
-    # Calculate metrics for each threshold
+    # Calculate macro F1 for each threshold
     for thresh in thresholds:
         y_pred_binary = (y_pred > thresh).astype(int)
-        metrics[f'accuracy_th_{thresh}'] = accuracy_score(y_true, y_pred_binary)
-        metrics[f'precision_th_{thresh}'] = precision_score(y_true, y_pred_binary, zero_division=0)
-        metrics[f'recall_th_{thresh}'] = recall_score(y_true, y_pred_binary, zero_division=0)
-        metrics[f'f1_th_{thresh}'] = f1_score(y_true, y_pred_binary, zero_division=0)
-
-        # Calculate per-class metrics for macro averages
-        precision, recall, f1, support = precision_recall_fscore_support(y_true, y_pred_binary, zero_division=0)
-        macro_f1 = (f1[0] + f1[1]) / 2 if len(f1) == 2 else metrics[f'f1_th_{thresh}']
-        macro_precision = (precision[0] + precision[1]) / 2 if len(precision) == 2 else metrics[f'precision_th_{thresh}']
-        macro_recall = (recall[0] + recall[1]) / 2 if len(recall) == 2 else metrics[f'recall_th_{thresh}']
-        
+        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred_binary, zero_division=0)
+        macro_f1 = (f1[0] + f1[1]) / 2 if len(f1) == 2 else f1[0]
         metrics[f'macro_f1_th_{thresh}'] = macro_f1
-        metrics[f'macro_precision_th_{thresh}'] = macro_precision
-        metrics[f'macro_recall_th_{thresh}'] = macro_recall
 
         # Track the best threshold based on macro F1
         if macro_f1 > best_macro_f1:
             best_macro_f1 = macro_f1
             best_threshold = thresh
             best_threshold_metrics = {
-                'accuracy': metrics[f'accuracy_th_{thresh}'],
-                'precision': metrics[f'precision_th_{thresh}'],
-                'recall': metrics[f'recall_th_{thresh}'],
-                'f1': metrics[f'f1_th_{thresh}'],
+                'accuracy': accuracy_score(y_true, y_pred_binary),
+                'precision': precision[1],  # Positive class (hate speech)
+                'recall': recall[1],
+                'f1': f1[1],
                 'macro_f1': macro_f1,
-                'macro_precision': macro_precision,
-                'macro_recall': macro_recall,
-                'precision_negative': precision[0],
+                'precision_negative': precision[0],  # Negative class (non-hate speech)
                 'recall_negative': recall[0],
                 'f1_negative': f1[0]
             }
 
-    # Update default metrics with the best threshold's values (based on macro F1)
+    # Update metrics with best threshold values and ROC-AUC
     metrics.update({
         'accuracy': best_threshold_metrics['accuracy'],
         'precision': best_threshold_metrics['precision'],
         'recall': best_threshold_metrics['recall'],
         'f1': best_threshold_metrics['f1'],
         'macro_f1': best_threshold_metrics['macro_f1'],
-        'macro_precision': best_threshold_metrics['macro_precision'],
-        'macro_recall': best_threshold_metrics['macro_recall'],
-        'roc_auc': roc_auc_score(y_true, y_pred) if y_pred is not None else 0.0,
-        'best_threshold': best_threshold,
         'precision_negative': best_threshold_metrics['precision_negative'],
         'recall_negative': best_threshold_metrics['recall_negative'],
-        'f1_negative': best_threshold_metrics['f1_negative']
+        'f1_negative': best_threshold_metrics['f1_negative'],
+        'roc_auc': roc_auc_score(y_true, y_pred) if y_pred is not None else 0.0,
+        'best_threshold': best_threshold
     })
 
     return metrics
@@ -94,7 +78,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=N
         optimizer: Optimizer
         scheduler: Learning rate scheduler
         device: Device to run training on
-        class_weights: Optional class weight for slight imbalance
+        class_weights: Optional class weight for loss
         max_norm: Maximum norm for gradient clipping
     Returns:
         dict: Training metrics including loss and performance metrics
@@ -176,7 +160,7 @@ def evaluate_model(model, dataloader, device, class_weights=None):
 
 def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_metrics, best_macro_f1, best_epoch):
     """
-    Print comprehensive epoch metrics, including macro F1, macro precision, macro recall, and negative class metrics.
+    Print epoch metrics, focusing on key metrics for a nearly balanced dataset.
     Args:
         epoch: Current epoch (0-indexed)
         num_epochs: Total number of epochs
@@ -190,53 +174,26 @@ def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_m
     print("\n" + "="*60)
     print(f"Epoch {epoch+1}/{num_epochs} | Fold {fold+1}/{num_folds}")
     print("="*60)
-
     print("TRAINING:")
     print(f"  Loss: {train_metrics['loss']:.4f}")
-    print(f"  Accuracy: {train_metrics['accuracy']:.4f} (Best Threshold: {train_metrics['best_threshold']})")
-    print(f"  Precision (Positive): {train_metrics['precision']:.4f}")
-    print(f"  Recall (Positive): {train_metrics['recall']:.4f}")
-    print(f"  F1 (Positive): {train_metrics['f1']:.4f}")
-    print(f"  Precision (Negative): {train_metrics['precision_negative']:.4f}")
-    print(f"  Recall (Negative): {train_metrics['recall_negative']:.4f}")
-    print(f"  F1 (Negative): {train_metrics['f1_negative']:.4f}")
-    print(f"  Macro Precision: {train_metrics['macro_precision']:.4f}")
-    print(f"  Macro Recall: {train_metrics['macro_recall']:.4f}")
-    print(f"  Macro F1: {train_metrics['macro_f1']:.4f}")
+    print(f"  Accuracy: {train_metrics['accuracy']:.4f}")
+    print(f"  Macro F1: {train_metrics['macro_f1']:.4f} (Threshold: {train_metrics['best_threshold']})")
+    print(f"  F1 (Hate): {train_metrics['f1']:.4f}")
+    print(f"  F1 (Non-Hate): {train_metrics['f1_negative']:.4f}")
     print(f"  ROC-AUC: {train_metrics['roc_auc']:.4f}")
-    print("  Threshold Exploration:")
-    for thresh in [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]:
-        print(f"    Threshold {thresh}: Macro F1={train_metrics[f'macro_f1_th_{thresh}']:.4f}, "
-              f"Macro Precision={train_metrics[f'macro_precision_th_{thresh}']:.4f}, "
-              f"Macro Recall={train_metrics[f'macro_recall_th_{thresh}']:.4f}, "
-              f"F1 (Positive)={train_metrics[f'f1_th_{thresh}']:.4f}")
-
     print("\nVALIDATION:")
     print(f"  Loss: {val_metrics['loss']:.4f}")
-    print(f"  Accuracy: {val_metrics['accuracy']:.4f} (Best Threshold: {val_metrics['best_threshold']})")
-    print(f"  Precision (Positive): {val_metrics['precision']:.4f}")
-    print(f"  Recall (Positive): {val_metrics['recall']:.4f}")
-    print(f"  F1 (Positive): {val_metrics['f1']:.4f}")
-    print(f"  Precision (Negative): {val_metrics['precision_negative']:.4f}")
-    print(f"  Recall (Negative): {val_metrics['recall_negative']:.4f}")
-    print(f"  F1 (Negative): {val_metrics['f1_negative']:.4f}")
-    print(f"  Macro Precision: {val_metrics['macro_precision']:.4f}")
-    print(f"  Macro Recall: {val_metrics['macro_recall']:.4f}")
-    print(f"  Macro F1: {val_metrics['macro_f1']:.4f}")
+    print(f"  Accuracy: {val_metrics['accuracy']:.4f}")
+    print(f"  Macro F1: {val_metrics['macro_f1']:.4f} (Threshold: {val_metrics['best_threshold']})")
+    print(f"  F1 (Hate): {val_metrics['f1']:.4f}")
+    print(f"  F1 (Non-Hate): {val_metrics['f1_negative']:.4f}")
     print(f"  ROC-AUC: {val_metrics['roc_auc']:.4f}")
-    print("  Threshold Exploration:")
-    for thresh in [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]:
-        print(f"    Threshold {thresh}: Macro F1={val_metrics[f'macro_f1_th_{thresh}']:.4f}, "
-              f"Macro Precision={val_metrics[f'macro_precision_th_{thresh}']:.4f}, "
-              f"Macro Recall={val_metrics[f'macro_recall_th_{thresh}']:.4f}, "
-              f"F1 (Positive)={val_metrics[f'f1_th_{thresh}']:.4f}")
-
     print(f"\nBest Macro F1 so far: {best_macro_f1:.4f} (Epoch {best_epoch})")
     print("="*60)
 
 def run_kfold_training(config, comments, labels, tokenizer, device):
     """
-    Run K-fold cross-validation training for hate speech detection, optimized for macro F1 on imbalanced datasets.
+    Run K-fold cross-validation training for hate speech detection, optimized for a nearly balanced dataset.
     Args:
         config: Configuration object with hyperparameters
         comments: Array of text comments
@@ -285,7 +242,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             train_comments, val_comments = comments[train_idx], comments[val_idx]
             train_labels, val_labels = labels[train_idx], labels[val_idx]
 
-            # Re-enable class weights for slight imbalance
+            # No class weights needed for nearly balanced dataset
             class_weights = None
 
             train_dataset = HateSpeechDataset(train_comments, train_labels, tokenizer, config.max_length)
@@ -343,32 +300,20 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 print_epoch_metrics(epoch, config.epochs, fold, config.num_folds,
                                    train_metrics, val_metrics, best_macro_f1, best_epoch)
 
-                # Log metrics to MLflow
+                # Log key metrics to MLflow
                 mlflow.log_metrics({
                     f'fold_{fold+1}_epoch_{epoch+1}_train_loss': train_metrics['loss'],
                     f'fold_{fold+1}_epoch_{epoch+1}_train_accuracy': train_metrics['accuracy'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_precision': train_metrics['precision'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_recall': train_metrics['recall'],
                     f'fold_{fold+1}_epoch_{epoch+1}_train_f1': train_metrics['f1'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_macro_f1': train_metrics['macro_f1'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_macro_precision': train_metrics['macro_precision'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_macro_recall': train_metrics['macro_recall'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_roc_auc': train_metrics['roc_auc'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_precision_negative': train_metrics['precision_negative'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_train_recall_negative': train_metrics['recall_negative'],
                     f'fold_{fold+1}_epoch_{epoch+1}_train_f1_negative': train_metrics['f1_negative'],
+                    f'fold_{fold+1}_epoch_{epoch+1}_train_macro_f1': train_metrics['macro_f1'],
+                    f'fold_{fold+1}_epoch_{epoch+1}_train_roc_auc': train_metrics['roc_auc'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_loss': val_metrics['loss'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_accuracy': val_metrics['accuracy'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_precision': val_metrics['precision'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_recall': val_metrics['recall'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_f1': val_metrics['f1'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_macro_f1': val_metrics['macro_f1'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_macro_precision': val_metrics['macro_precision'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_macro_recall': val_metrics['macro_recall'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_roc_auc': val_metrics['roc_auc'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_precision_negative': val_metrics['precision_negative'],
-                    f'fold_{fold+1}_epoch_{epoch+1}_val_recall_negative': val_metrics['recall_negative'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_f1_negative': val_metrics['f1_negative'],
+                    f'fold_{fold+1}_epoch_{epoch+1}_val_macro_f1': val_metrics['macro_f1'],
+                    f'fold_{fold+1}_epoch_{epoch+1}_val_roc_auc': val_metrics['roc_auc'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_best_threshold': val_metrics['best_threshold']
                 })
 
@@ -388,7 +333,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         best_fold_metrics = fold_results[best_fold_idx]
         mlflow.log_metric('best_fold_index', best_fold_idx + 1)
 
-        for metric_name in ['accuracy', 'precision', 'recall', 'f1', 'macro_f1', 'macro_precision', 'macro_recall', 'roc_auc', 'precision_negative', 'recall_negative', 'f1_negative']:
+        for metric_name in ['accuracy', 'f1', 'f1_negative', 'macro_f1', 'roc_auc']:
             best_value = max([fold_result[metric_name] for fold_result in fold_results])
             mlflow.log_metric(f'best_{metric_name}', best_value)
 
