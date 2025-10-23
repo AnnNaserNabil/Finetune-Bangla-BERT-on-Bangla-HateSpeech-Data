@@ -392,14 +392,14 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         best_loss = min([fold_result['loss'] for fold_result in fold_results])
         mlflow.log_metric('best_loss', best_loss)
 
-        if best_fold_model is not None:
-            final_model = TransformerBinaryClassifier(config.model_path, dropout=config.dropout)
-            final_model.load_state_dict(best_fold_model)
-            mlflow.pytorch.log_model(
-                final_model,
-                artifact_path="model",
-                registered_model_name=f"bangla_hatespeech_model_fold{best_fold_idx+1}_macro_f1_{best_overall_macro_f1:.4f}"
-            )
-            print(f"\nModel logged to MLflow for fold {best_fold_idx+1} with macro F1 {best_overall_macro_f1:.4f}")
+#        if best_fold_model is not None:
+#           final_model = TransformerBinaryClassifier(config.model_path, dropout=config.dropout)
+#          final_model.load_state_dict(best_fold_model)
+#          mlflow.pytorch.log_model(
+#              final_model,
+#              artifact_path="model",
+#              registered_model_name=f"bangla_hatespeech_model_fold{best_fold_idx+1}_macro_f1_{best_overall_macro_f1:.4f}"
+#          )
+#         print(f"\nModel logged to MLflow for fold {best_fold_idx+1} with macro F1 {best_overall_macro_f1:.4f}")
 
         print_experiment_summary(best_fold_idx, best_fold_metrics, model_metrics)
