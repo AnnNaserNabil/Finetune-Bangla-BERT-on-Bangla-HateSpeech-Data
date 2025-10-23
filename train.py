@@ -336,7 +336,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
 
             print_fold_summary(fold, best_metrics, best_epoch)
 
-        # Aggregate metrics across folds
+       # Aggregate metrics across folds
         aggregate_metrics = {
             'mean_val_accuracy': np.mean([fr['accuracy'] for fr in fold_results]),
             'std_val_accuracy': np.std([fr['accuracy'] for fr in fold_results]),
@@ -361,9 +361,10 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         }
         mlflow.log_metrics(aggregate_metrics)
 
-        # Create and log summary table
+        # Create and log fold summary table (including training metrics and best epoch)
         summary_data = {
             'Fold': [f'Fold {i+1}' for i in range(config.num_folds)],
+            'Best Epoch': [fr['best_epoch'] for fr in fold_results],
             'Val Accuracy': [fr['accuracy'] for fr in fold_results],
             'Val Precision (Hate)': [fr['precision'] for fr in fold_results],
             'Val Recall (Hate)': [fr['recall'] for fr in fold_results],
@@ -374,16 +375,59 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             'Val Macro F1': [fr['macro_f1'] for fr in fold_results],
             'Val ROC-AUC': [fr['roc_auc'] for fr in fold_results],
             'Val Loss': [fr['loss'] for fr in fold_results],
-            'Best Threshold': [fr['best_threshold'] for fr in fold_results]
+            'Best Threshold': [fr['best_threshold'] for fr in fold_results],
+            'Train Accuracy': [fr['train_accuracy'] for fr in fold_results],
+            'Train Precision (Hate)': [fr['train_precision'] for fr in fold_results],
+            'Train Recall (Hate)': [fr['train_recall'] for fr in fold_results],
+            'Train F1 (Hate)': [fr['train_f1'] for fr in fold_results],
+            'Train Precision (Non-Hate)': [fr['train_precision_negative'] for fr in fold_results],
+            'Train Recall (Non-Hate)': [fr['train_recall_negative'] for fr in fold_results],
+            'Train F1 (Non-Hate)': [fr['train_f1_negative'] for fr in fold_results],
+            'Train Macro F1': [fr['train_macro_f1'] for fr in fold_results],
+            'Train ROC-AUC': [fr['train_roc_auc'] for fr in fold_results],
+            'Train Loss': [fr['train_loss'] for fr in fold_results]
         }
         summary_df = pd.DataFrame(summary_data)
-        summary_df.loc['Mean'] = summary_df.mean(numeric_only=True)
-        summary_df.loc['Std'] = summary_df.std(numeric_only=True)
+        summary_df.loc['Mean'] = summary_df.select_dtypes(include=[np.number]).mean()
+        summary_df.loc['Std'] = summary_df.select_dtypes(include=[np.number]).std()
         summary_df.to_csv('fold_summary.csv')
         mlflow.log_artifact('fold_summary.csv')
 
-        best_fold_metrics = fold_results[best_fold_idx]
+        # Create and log best metrics CSV (global best based on macro F1)
+        best_metrics_data = {
+            'Best Fold': [f'Fold {best_fold_idx+1}'],
+            'Best Epoch': [best_overall_epoch],
+            'Val Accuracy': [best_overall_metrics['accuracy']],
+            'Val Precision (Hate)': [best_overall_metrics['precision']],
+            'Val Recall (Hate)': [best_overall_metrics['recall']],
+            'Val F1 (Hate)': [best_overall_metrics['f1']],
+            'Val Precision (Non-Hate)': [best_overall_metrics['precision_negative']],
+            'Val Recall (Non-Hate)': [best_overall_metrics['recall_negative']],
+            'Val F1 (Non-Hate)': [best_overall_metrics['f1_negative']],
+            'Val Macro F1': [best_overall_metrics['macro_f1']],
+            'Val ROC-AUC': [best_overall_metrics['roc_auc']],
+            'Val Loss': [best_overall_metrics['loss']],
+            'Best Threshold': [best_overall_metrics['best_threshold']],
+            'Train Accuracy': [best_overall_metrics['train_accuracy']],
+            'Train Precision (Hate)': [best_overall_metrics['train_precision']],
+            'Train Recall (Hate)': [best_overall_metrics['train_recall']],
+            'Train F1 (Hate)': [best_overall_metrics['train_f1']],
+            'Train Precision (Non-Hate)': [best_overall_metrics['train_precision_negative']],
+            'Train Recall (Non-Hate)': [best_overall_metrics['train_recall_negative']],
+            'Train F1 (Non-Hate)': [best_overall_metrics['train_f1_negative']],
+            'Train Macro F1': [best_overall_metrics['train_macro_f1']],
+            'Train ROC-AUC': [best_overall_metrics['train_roc_auc']],
+            'Train Loss': [best_overall_metrics['train_loss']]
+        }
+        best_metrics_df = pd.DataFrame(best_metrics_data)
+        best_metrics_df.to_csv('best_metrics.csv', index=False)
+        mlflow.log_artifact('best_metrics.csv')
+
+        # Log global best metrics to MLflow
         mlflow.log_metric('best_fold_index', best_fold_idx + 1)
+        mlflow.log_metric('best_epoch', best_overall_epoch)
+        for metric_name, metric_value in best_overall_metrics.items():
+            mlflow.log_metric(f"best_{metric_name}", metric_value)
 
         for metric_name in ['accuracy', 'precision', 'recall', 'f1', 'f1_negative', 'precision_negative', 'recall_negative', 'macro_f1', 'roc_auc']:
             best_value = max([fold_result[metric_name] for fold_result in fold_results])
@@ -392,14 +436,4 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         best_loss = min([fold_result['loss'] for fold_result in fold_results])
         mlflow.log_metric('best_loss', best_loss)
 
-#        if best_fold_model is not None:
-#           final_model = TransformerBinaryClassifier(config.model_path, dropout=config.dropout)
-#          final_model.load_state_dict(best_fold_model)
-#          mlflow.pytorch.log_model(
-#              final_model,
-#              artifact_path="model",
-#              registered_model_name=f"bangla_hatespeech_model_fold{best_fold_idx+1}_macro_f1_{best_overall_macro_f1:.4f}"
-#          )
-#         print(f"\nModel logged to MLflow for fold {best_fold_idx+1} with macro F1 {best_overall_macro_f1:.4f}")
-
-        print_experiment_summary(best_fold_idx, best_fold_metrics, model_metrics)
+        print_experiment_summary(best_fold_idx, best_overall_metrics, model_metrics)
