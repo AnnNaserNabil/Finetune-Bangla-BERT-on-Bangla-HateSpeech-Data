@@ -15,7 +15,7 @@ def main():
     # Parse arguments
     config = parse_arguments()
     print_config(config)
-
+    config.freeze_base = True
     # Set random seed for reproducibility
     set_seed(config.seed)
 
