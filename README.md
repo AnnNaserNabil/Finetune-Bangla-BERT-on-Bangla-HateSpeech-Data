@@ -59,6 +59,7 @@ Run fine-tuning via `main.py` with command-line arguments. All experiments log t
     --gradient_clip_norm 1.0 \
     --early_stopping_patience 5 \
     --num_folds 5
+    --freeze_base
    ```
    
    - Full arguments:
@@ -123,6 +124,7 @@ To collaborate with minimal effort:
     --gradient_clip_norm 1.0 \
     --early_stopping_patience 5 \
     --num_folds 5
+    --freeze_base
    ```
 
 * After run: Zip and download MLflow logs:
