@@ -58,7 +58,7 @@ Run fine-tuning via `main.py` with command-line arguments. All experiments log t
     --warmup_ratio 0.1 \
     --gradient_clip_norm 1.0 \
     --early_stopping_patience 5 \
-    --num_folds 5
+    --num_folds 5 \
     --freeze_base
    ```
    
@@ -123,7 +123,7 @@ To collaborate with minimal effort:
     --warmup_ratio 0.1 \
     --gradient_clip_norm 1.0 \
     --early_stopping_patience 5 \
-    --num_folds 5
+    --num_folds 5 \
     --freeze_base
    ```
 
