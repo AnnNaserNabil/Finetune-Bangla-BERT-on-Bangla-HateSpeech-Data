@@ -229,7 +229,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         )
 
         fold_results = []
-        best_fold_model = None
+        best_fold_model92 = None
         best_fold_idx = -1
         best_overall_macro_f1 = 0
         best_overall_metrics = {}
@@ -369,6 +369,10 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         mlflow.log_metrics(aggregate_metrics)
 
         # Create and log fold summary table (including training metrics and best epoch)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        # Create unique filename for fold_summary.csv
+        model_name_safe = config.model_path.replace('/', '_')  # Replace slashes for safe filename
+        fold_summary_filename = f'fold_summary_{model_name_safe}_batch{config.batch}_lr{config.lr}_epochs{config.epochs}_{timestamp}.csv'
         summary_data = {
             'Fold': [f'Fold {i+1}' for i in range(config.num_folds)],
             'Best Epoch': [fr['best_epoch'] for fr in fold_results],
@@ -397,8 +401,11 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         summary_df = pd.DataFrame(summary_data)
         summary_df.loc['Mean'] = summary_df.select_dtypes(include=[np.number]).mean()
         summary_df.loc['Std'] = summary_df.select_dtypes(include=[np.number]).std()
-        summary_df.to_csv('fold_summary.csv')
-        mlflow.log_artifact('fold_summary.csv')
+        try:
+            summary_df.to_csv(fold_summary_filename)
+            mlflow.log_artifact(fold_summary_filename)
+        except Exception as e:
+            print(f"Error saving or logging {fold_summary_filename}: {e}")
 
         # Validate required keys in best_overall_metrics
         required_keys = [
@@ -413,8 +420,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                 raise KeyError(f"Missing key '{key}' in best_overall_metrics")
 
         # Create and log best metrics CSV (global best based on macro F1)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        best_metrics_filename = f'best_metrics_{timestamp}.csv'
+        best_metrics_filename = f'best_metrics_{model_name_safe}_batch{config.batch}_lr{config.lr}_epochs{config.epochs}_{timestamp}.csv'
         best_metrics_data = {
             'Best Fold': [f'Fold {best_fold_idx+1}'],
             'Best Epoch': [best_overall_epoch],
