@@ -57,13 +57,13 @@ class TransformerBinaryClassifier(nn.Module):
 
         return {'loss': loss, 'logits': logits}
 
+
     def freeze_base_layers(self):
         """
         Freeze encoder parameters for feature extraction.
         """
-        for name, param in self.encoder.named_parameters():
-            if not any(layer in name for layer in ['layer.10', 'layer.11']):  # Unfreeze last 2 layers
-                param.requires_grad = False
+        for param in self.encoder.parameters():
+            param.requires_grad = False
 
         frozen_params = sum(p.numel() for p in self.encoder.parameters())
         total_params = sum(p.numel() for p in self.parameters())
