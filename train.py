@@ -1,3 +1,5 @@
+import pickle
+import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -13,6 +15,16 @@ import time
 from data import HateSpeechDataset, calculate_class_weights, prepare_kfold_splits
 from model import TransformerBinaryClassifier
 from utils import get_model_metrics, print_fold_summary, print_experiment_summary
+
+def cache_dataset(comments, labels, tokenizer, max_length, cache_file):
+    if os.path.exists(cache_file):
+        with open(cache_file, 'rb') as f:
+            return pickle.load(f)
+    dataset = HateSpeechDataset(comments, labels, tokenizer, max_length)
+    with open(cache_file, 'wb') as f:
+        pickle.dump(dataset, f)
+    return dataset
+
 
 def calculate_metrics(y_true, y_pred):
     """
@@ -239,8 +251,10 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             # No class weights needed for nearly balanced dataset
             class_weights = None
 
-            train_dataset = HateSpeechDataset(train_comments, train_labels, tokenizer, config.max_length)
-            val_dataset = HateSpeechDataset(val_comments, val_labels, tokenizer, config.max_length)
+            #train_dataset = HateSpeechDataset(train_comments, train_labels, tokenizer, config.max_length)
+            #val_dataset = HateSpeechDataset(val_comments, val_labels, tokenizer, config.max_length)
+            train_dataset = cache_dataset(train_comments, train_labels, tokenizer, config.max_length, f'/kaggle/working/train_cache_fold{fold}.pkl')
+            val_dataset = cache_dataset(val_comments, val_labels, tokenizer, config.max_length, f'/kaggle/working/val_cache_fold{fold}.pkl')
 
             train_loader = DataLoader(train_dataset, batch_size=config.batch, shuffle=True, num_workers=2, pin_memory=True)
             val_loader = DataLoader(val_dataset, batch_size=config.batch, shuffle=False, num_workers=2, pin_memory=True)
