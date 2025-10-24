@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from torch.cuda.amp import autocast, GradScaler
 from torch.optim import AdamW
 from transformers import get_linear_schedule_with_warmup
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
@@ -66,24 +67,13 @@ def calculate_metrics(y_true, y_pred):
 
     return metrics
 
+
 def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=None, max_norm=1.0):
-    """
-    Train the model for one epoch.
-    Args:
-        model: The transformer model
-        dataloader: Training data loader
-        optimizer: Optimizer
-        scheduler: Learning rate scheduler
-        device: Device to run training on
-        class_weights: Optional class weight for loss
-        max_norm: Maximum norm for gradient clipping
-    Returns:
-        dict: Training metrics including loss and performance metrics
-    """
     model.train()
     total_loss = 0
     all_train_predictions = []
     all_train_labels = []
+    scaler = GradScaler()
 
     if class_weights is not None:
         loss_fct = nn.BCEWithLogitsLoss(pos_weight=class_weights.to(device))
@@ -96,11 +86,15 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=N
         labels = batch['labels'].to(device).view(-1, 1)
 
         optimizer.zero_grad()
-        outputs = model(input_ids, attention_mask=attention_mask, labels=None)
-        loss = loss_fct(outputs['logits'], labels)
-        loss.backward()
+        with autocast():
+            outputs = model(input_ids, attention_mask=attention_mask, labels=None)
+            loss = loss_fct(outputs['logits'], labels)
+        
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         scheduler.step()
 
         total_loss += loss.item()
@@ -111,20 +105,9 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=N
     avg_loss = total_loss / len(dataloader)
     train_metrics = calculate_metrics(np.array(all_train_labels), np.array(all_train_predictions))
     train_metrics['loss'] = avg_loss
-
     return train_metrics
 
 def evaluate_model(model, dataloader, device, class_weights=None):
-    """
-    Evaluate the model on validation data.
-    Args:
-        model: The transformer model
-        dataloader: Validation data loader
-        device: Device to run evaluation on
-        class_weights: Optional class weight for loss calculation
-    Returns:
-        dict: Validation metrics including loss and performance metrics
-    """
     model.eval()
     total_loss = 0
     all_predictions = []
@@ -141,8 +124,9 @@ def evaluate_model(model, dataloader, device, class_weights=None):
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device).view(-1, 1)
 
-            outputs = model(input_ids, attention_mask=attention_mask, labels=None)
-            loss = loss_fct(outputs['logits'], labels)
+            with autocast():
+                outputs = model(input_ids, attention_mask=attention_mask, labels=None)
+                loss = loss_fct(outputs['logits'], labels)
             total_loss += loss.item()
 
             predictions = torch.sigmoid(outputs['logits'])
@@ -152,7 +136,6 @@ def evaluate_model(model, dataloader, device, class_weights=None):
     avg_loss = total_loss / len(dataloader)
     metrics = calculate_metrics(np.array(all_labels), np.array(all_predictions))
     metrics['loss'] = avg_loss
-
     return metrics
 
 def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_metrics, best_macro_f1, best_epoch):
