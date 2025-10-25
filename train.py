@@ -41,7 +41,7 @@ def calculate_metrics(y_true, y_pred):
     y_pred = y_pred.flatten()
 
      # --- Safe ROC-AUC once from probabilities ---
-     try:
+    try:
         auc_safe = roc_auc_score(y_true, y_pred)
     except ValueError:
         auc_safe = 0.0
