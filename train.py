@@ -17,10 +17,20 @@ from model import TransformerBinaryClassifier
 from utils import get_model_metrics, print_fold_summary, print_experiment_summary
 
 def cache_dataset(comments, labels, tokenizer, max_length, cache_file):
+    """Cache dataset to avoid reprocessing"""
     if os.path.exists(cache_file):
+        print(f"Loading cached dataset from {cache_file}")
         with open(cache_file, 'rb') as f:
             return pickle.load(f)
+    
+    print(f"Creating and caching dataset to {cache_file}")
     dataset = HateSpeechDataset(comments, labels, tokenizer, max_length)
+    
+    # Ensure cache directory exists
+    cache_dir = os.path.dirname(cache_file)
+    if cache_dir:
+        os.makedirs(cache_dir, exist_ok=True)
+    
     with open(cache_file, 'wb') as f:
         pickle.dump(dataset, f)
     return dataset
@@ -40,7 +50,7 @@ def calculate_metrics(y_true, y_pred):
     y_true = y_true.flatten()
     y_pred = y_pred.flatten()
 
-     # --- Safe ROC-AUC once from probabilities ---
+    # --- Safe ROC-AUC once from probabilities ---
     try:
         auc_safe = roc_auc_score(y_true, y_pred)
     except ValueError:
@@ -52,8 +62,9 @@ def calculate_metrics(y_true, y_pred):
 
     for thresh in thresholds:
         y_pred_binary = (y_pred > thresh).astype(int)
-        #precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred_binary, zero_division=0)
-        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred_binary, labels=[0,1], average=None, zero_division=0)
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            y_true, y_pred_binary, labels=[0,1], average=None, zero_division=0
+        )
 
         macro_f1 = (f1[0] + f1[1]) / 2 if len(f1) == 2 else f1[0]
         metrics[f'macro_f1_th_{thresh}'] = macro_f1
@@ -109,7 +120,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=N
         with autocast():
             outputs = model(input_ids, attention_mask=attention_mask, labels=None)
             loss = loss_fct(outputs['logits'], labels)
-        
+
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
@@ -126,6 +137,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=N
     train_metrics = calculate_metrics(np.array(all_train_labels), np.array(all_train_predictions))
     train_metrics['loss'] = avg_loss
     return train_metrics
+
 
 def evaluate_model(model, dataloader, device, class_weights=None):
     model.eval()
@@ -158,19 +170,9 @@ def evaluate_model(model, dataloader, device, class_weights=None):
     metrics['loss'] = avg_loss
     return metrics
 
+
 def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_metrics, best_macro_f1, best_epoch):
-    """
-    Print epoch metrics, focusing on key metrics for a nearly balanced dataset.
-    Args:
-        epoch: Current epoch (0-indexed)
-        num_epochs: Total number of epochs
-        fold: Current fold (0-indexed)
-        num_folds: Total number of folds
-        train_metrics: Training metrics dictionary
-        val_metrics: Validation metrics dictionary
-        best_macro_f1: Best validation macro F1 score so far
-        best_epoch: Epoch with best macro F1 score (0-indexed)
-    """
+    """Print epoch metrics, focusing on key metrics for a nearly balanced dataset."""
     print("\n" + "="*60)
     print(f"Epoch {epoch+1}/{num_epochs} | Fold {fold+1}/{num_folds}")
     print("="*60)
@@ -191,6 +193,7 @@ def print_epoch_metrics(epoch, num_epochs, fold, num_folds, train_metrics, val_m
     print(f"\nBest Macro F1 so far: {best_macro_f1:.4f} (Epoch {best_epoch})")
     print("="*60)
 
+
 def run_kfold_training(config, comments, labels, tokenizer, device):
     """
     Run K-fold cross-validation training for hate speech detection, optimized for a nearly balanced dataset.
@@ -201,9 +204,28 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         tokenizer: Tokenizer for text encoding
         device: Device to run training on
     """
+    # Create directories for outputs
+    output_dir = './outputs'
+    cache_dir = './cache'
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(cache_dir, exist_ok=True)
+    
+    # Set MLflow tracking
+    mlflow_dir = os.path.abspath('./mlruns')
+    mlflow.set_tracking_uri(f"file://{mlflow_dir}")
+    print(f"\n{'='*60}")
+    print(f"MLflow tracking URI: {mlflow.get_tracking_uri()}")
+    print(f"MLflow logs directory: {mlflow_dir}")
+    print(f"CSV outputs directory: {output_dir}")
+    print(f"Cache directory: {cache_dir}")
+    print(f"{'='*60}\n")
+    
     mlflow.set_experiment(config.mlflow_experiment_name)
 
     with mlflow.start_run(run_name=f"{config.author_name}_batch{config.batch}_lr{config.lr}_epochs{config.epochs}"):
+        run_id = mlflow.active_run().info.run_id
+        print(f"MLflow Run ID: {run_id}\n")
+        
         mlflow.log_params({
             'batch_size': config.batch,
             'learning_rate': config.lr,
@@ -230,7 +252,7 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         )
 
         fold_results = []
-        best_fold_model92 = None
+        best_fold_model = None
         best_fold_idx = -1
         best_overall_macro_f1 = 0
         best_overall_metrics = {}
@@ -259,13 +281,19 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             # No class weights needed for nearly balanced dataset
             class_weights = None
 
-            #train_dataset = HateSpeechDataset(train_comments, train_labels, tokenizer, config.max_length)
-            #val_dataset = HateSpeechDataset(val_comments, val_labels, tokenizer, config.max_length)
-            train_dataset = cache_dataset(train_comments, train_labels, tokenizer, config.max_length, f'/kaggle/working/train_cache_fold{fold}.pkl')
-            val_dataset = cache_dataset(val_comments, val_labels, tokenizer, config.max_length, f'/kaggle/working/val_cache_fold{fold}.pkl')
+            # Use portable cache paths
+            train_cache_path = os.path.join(cache_dir, f'train_cache_fold{fold}.pkl')
+            val_cache_path = os.path.join(cache_dir, f'val_cache_fold{fold}.pkl')
+            
+            train_dataset = cache_dataset(train_comments, train_labels, tokenizer, 
+                                         config.max_length, train_cache_path)
+            val_dataset = cache_dataset(val_comments, val_labels, tokenizer, 
+                                       config.max_length, val_cache_path)
 
-            train_loader = DataLoader(train_dataset, batch_size=config.batch, shuffle=True, num_workers=2, pin_memory=True)
-            val_loader = DataLoader(val_dataset, batch_size=config.batch, shuffle=False, num_workers=2, pin_memory=True)
+            train_loader = DataLoader(train_dataset, batch_size=config.batch, 
+                                     shuffle=True, num_workers=2, pin_memory=True)
+            val_loader = DataLoader(val_dataset, batch_size=config.batch, 
+                                   shuffle=False, num_workers=2, pin_memory=True)
 
             model = TransformerBinaryClassifier(config.model_path, dropout=config.dropout)
             if config.freeze_base:
@@ -280,7 +308,8 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
                     'model_size_mb': model_metrics['model_size_mb']
                 })
 
-            optimizer = AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay, eps=1e-8)
+            optimizer = AdamW(model.parameters(), lr=config.lr, 
+                            weight_decay=config.weight_decay, eps=1e-8)
             total_steps = len(train_loader) * config.epochs
             scheduler = get_linear_schedule_with_warmup(
                 optimizer,
@@ -295,7 +324,8 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             patience_counter = 0
 
             for epoch in range(config.epochs):
-                train_metrics = train_epoch(model, train_loader, optimizer, scheduler, device, class_weights, max_norm=config.gradient_clip_norm)
+                train_metrics = train_epoch(model, train_loader, optimizer, scheduler, 
+                                           device, class_weights, max_norm=config.gradient_clip_norm)
                 val_metrics = evaluate_model(model, val_loader, device, class_weights)
 
                 if val_metrics['macro_f1'] > best_macro_f1:
@@ -307,21 +337,22 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
 
                     # Log threshold exploration for best epoch
                     for thresh in [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]:
-                        mlflow.log_metric(f'fold_{fold+1}_best_epoch_val_macro_f1_th_{thresh}', val_metrics[f'macro_f1_th_{thresh}'])
+                        mlflow.log_metric(f'fold_{fold+1}_best_epoch_val_macro_f1_th_{thresh}', 
+                                        val_metrics[f'macro_f1_th_{thresh}'])
 
                     if best_macro_f1 > best_overall_macro_f1:
                         best_overall_macro_f1 = best_macro_f1
                         best_fold_idx = fold
                         best_fold_model = model.state_dict()
                         best_overall_metrics = best_metrics.copy()
-                        best_overall_epoch = best_epoch  # Track the best epoch
+                        best_overall_epoch = best_epoch
                 else:
                     patience_counter += 1
 
                 print_epoch_metrics(epoch, config.epochs, fold, config.num_folds,
                                    train_metrics, val_metrics, best_macro_f1, best_epoch)
 
-                # Log only validation metrics per epoch
+                # Log validation metrics per epoch
                 mlflow.log_metrics({
                     f'fold_{fold+1}_epoch_{epoch+1}_val_loss': val_metrics['loss'],
                     f'fold_{fold+1}_epoch_{epoch+1}_val_accuracy': val_metrics['accuracy'],
@@ -339,9 +370,9 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             best_metrics['best_epoch'] = best_epoch
             fold_results.append(best_metrics)
 
-            # Log all best metrics for the fold, including precision and recall for both classes
+            # Log all best metrics for the fold
             for metric_name, metric_value in best_metrics.items():
-                if not metric_name.startswith('train_'):
+                if not metric_name.startswith('train_') and not metric_name.startswith('macro_f1_th_'):
                     mlflow.log_metric(f"fold_{fold+1}_best_{metric_name}", metric_value)
 
             print_fold_summary(fold, best_metrics, best_epoch)
@@ -371,11 +402,12 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         }
         mlflow.log_metrics(aggregate_metrics)
 
-        # Create and log fold summary table (including training metrics and best epoch)
+        # Create and save fold summary table
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        # Create unique filename for fold_summary.csv
-        model_name_safe = config.model_path.replace('/', '_')  # Replace slashes for safe filename
+        model_name_safe = config.model_path.replace('/', '_')
         fold_summary_filename = f'fold_summary_{model_name_safe}_batch{config.batch}_lr{config.lr}_epochs{config.epochs}_{timestamp}.csv'
+        fold_summary_path = os.path.join(output_dir, fold_summary_filename)
+        
         summary_data = {
             'Fold': [f'Fold {i+1}' for i in range(config.num_folds)],
             'Best Epoch': [fr['best_epoch'] for fr in fold_results],
@@ -404,11 +436,14 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         summary_df = pd.DataFrame(summary_data)
         summary_df.loc['Mean'] = summary_df.select_dtypes(include=[np.number]).mean()
         summary_df.loc['Std'] = summary_df.select_dtypes(include=[np.number]).std()
+        
         try:
-            summary_df.to_csv(fold_summary_filename)
-            mlflow.log_artifact(fold_summary_filename)
+            summary_df.to_csv(fold_summary_path, index=True)
+            mlflow.log_artifact(fold_summary_path)
+            print(f"\n✓ Fold summary saved to: {fold_summary_path}")
+            print(f"✓ Fold summary logged to MLflow")
         except Exception as e:
-            print(f"Error saving or logging {fold_summary_filename}: {e}")
+            print(f"\n✗ Error saving fold summary: {e}")
 
         # Validate required keys in best_overall_metrics
         required_keys = [
@@ -422,8 +457,10 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             if key not in best_overall_metrics:
                 raise KeyError(f"Missing key '{key}' in best_overall_metrics")
 
-        # Create and log best metrics CSV (global best based on macro F1)
+        # Create and save best metrics CSV
         best_metrics_filename = f'best_metrics_{model_name_safe}_batch{config.batch}_lr{config.lr}_epochs{config.epochs}_{timestamp}.csv'
+        best_metrics_path = os.path.join(output_dir, best_metrics_filename)
+        
         best_metrics_data = {
             'Best Fold': [f'Fold {best_fold_idx+1}'],
             'Best Epoch': [best_overall_epoch],
@@ -450,19 +487,25 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
             'Train Loss': [best_overall_metrics['train_loss']]
         }
         best_metrics_df = pd.DataFrame(best_metrics_data)
+        
         try:
-            best_metrics_df.to_csv(best_metrics_filename, index=False)
-            mlflow.log_artifact(best_metrics_filename)
+            best_metrics_df.to_csv(best_metrics_path, index=False)
+            mlflow.log_artifact(best_metrics_path)
+            print(f"✓ Best metrics saved to: {best_metrics_path}")
+            print(f"✓ Best metrics logged to MLflow")
         except Exception as e:
-            print(f"Error saving or logging {best_metrics_filename}: {e}")
+            print(f"✗ Error saving best metrics: {e}")
 
         # Log global best metrics to MLflow
         mlflow.log_metric('best_fold_index', best_fold_idx + 1)
         mlflow.log_metric('best_epoch', best_overall_epoch)
+        
         for metric_name, metric_value in best_overall_metrics.items():
-            mlflow.log_metric(f"best_{metric_name}", metric_value)
+            if not metric_name.startswith('macro_f1_th_'):
+                mlflow.log_metric(f"best_{metric_name}", metric_value)
 
-        for metric_name in ['accuracy', 'precision', 'recall', 'f1', 'f1_negative', 'precision_negative', 'recall_negative', 'macro_f1', 'roc_auc']:
+        for metric_name in ['accuracy', 'precision', 'recall', 'f1', 'f1_negative', 
+                           'precision_negative', 'recall_negative', 'macro_f1', 'roc_auc']:
             best_value = max([fold_result[metric_name] for fold_result in fold_results])
             mlflow.log_metric(f'best_{metric_name}', best_value)
 
@@ -470,3 +513,17 @@ def run_kfold_training(config, comments, labels, tokenizer, device):
         mlflow.log_metric('best_loss', best_loss)
 
         print_experiment_summary(best_fold_idx, best_overall_metrics, model_metrics)
+        
+        # Print final summary
+        print(f"\n{'='*60}")
+        print("TRAINING COMPLETED SUCCESSFULLY!")
+        print(f"{'='*60}")
+        print(f"CSV files saved in: {os.path.abspath(output_dir)}")
+        print(f"  - {fold_summary_filename}")
+        print(f"  - {best_metrics_filename}")
+        print(f"\nMLflow artifacts logged to: {mlflow_dir}")
+        print(f"Run ID: {run_id}")
+        print(f"\nTo view results in MLflow UI:")
+        print(f"  1. Run: mlflow ui")
+        print(f"  2. Open: http://localhost:5000")
+        print(f"{'='*60}\n")
