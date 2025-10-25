@@ -40,13 +40,21 @@ def calculate_metrics(y_true, y_pred):
     y_true = y_true.flatten()
     y_pred = y_pred.flatten()
 
+     # --- Safe ROC-AUC once from probabilities ---
+     try:
+        auc_safe = roc_auc_score(y_true, y_pred)
+    except ValueError:
+        auc_safe = 0.0
+
     best_macro_f1 = -1
     best_threshold = None
     best_threshold_metrics = {}
 
     for thresh in thresholds:
         y_pred_binary = (y_pred > thresh).astype(int)
-        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred_binary, zero_division=0)
+        #precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred_binary, zero_division=0)
+        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred_binary, labels=[0,1], average=None, zero_division=0)
+
         macro_f1 = (f1[0] + f1[1]) / 2 if len(f1) == 2 else f1[0]
         metrics[f'macro_f1_th_{thresh}'] = macro_f1
 
@@ -73,7 +81,7 @@ def calculate_metrics(y_true, y_pred):
         'precision_negative': best_threshold_metrics['precision_negative'],
         'recall_negative': best_threshold_metrics['recall_negative'],
         'f1_negative': best_threshold_metrics['f1_negative'],
-        'roc_auc': roc_auc_score(y_true, y_pred) if y_pred is not None else 0.0,
+        'roc_auc': auc_safe,
         'best_threshold': best_threshold
     })
 
